@@ -2,12 +2,14 @@ import { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { OvationPoint } from '@/services/noaa-api';
+import { computeTerminatorPoints } from '@/services/terminator';
 
 interface AuroraMapProps {
   ovationGrid: OvationPoint[];
   userLat?: number | null;
   userLon?: number | null;
   onMapClick?: (lat: number, lon: number) => void;
+  showTerminator?: boolean;
 }
 
 function getAuroraColor(probability: number): string {
@@ -17,10 +19,11 @@ function getAuroraColor(probability: number): string {
   return 'rgba(140, 80, 220, 0.2)';
 }
 
-export default function AuroraMap({ ovationGrid, userLat, userLon, onMapClick }: AuroraMapProps) {
+export default function AuroraMap({ ovationGrid, userLat, userLon, onMapClick, showTerminator = true }: AuroraMapProps) {
   const mapRef = useRef<L.Map | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const auroraLayerRef = useRef<L.LayerGroup | null>(null);
+  const terminatorLayerRef = useRef<L.LayerGroup | null>(null);
   const userMarkerRef = useRef<L.CircleMarker | null>(null);
 
   // Init map
@@ -42,11 +45,11 @@ export default function AuroraMap({ ovationGrid, userLat, userLon, onMapClick }:
       maxZoom: 19,
     }).addTo(map);
 
-    // Remove the dark invert filter since we're using dark tiles
     const tilePane = map.getPane('tilePane');
     if (tilePane) tilePane.style.filter = 'none';
 
     auroraLayerRef.current = L.layerGroup().addTo(map);
+    terminatorLayerRef.current = L.layerGroup().addTo(map);
 
     map.on('click', (e: L.LeafletMouseEvent) => {
       onMapClick?.(e.latlng.lat, e.latlng.lng);
@@ -74,7 +77,7 @@ export default function AuroraMap({ ovationGrid, userLat, userLon, onMapClick }:
     if (!auroraLayerRef.current) return;
     auroraLayerRef.current.clearLayers();
 
-    const step = 2; // sample every 2 degrees for performance
+    const step = 2;
     const filtered = ovationGrid.filter((_, i) => i % step === 0);
 
     for (const pt of filtered) {
@@ -88,6 +91,25 @@ export default function AuroraMap({ ovationGrid, userLat, userLon, onMapClick }:
       }).addTo(auroraLayerRef.current!);
     }
   }, [ovationGrid]);
+
+  // Day/Night terminator
+  useEffect(() => {
+    if (!terminatorLayerRef.current) return;
+    terminatorLayerRef.current.clearLayers();
+
+    if (!showTerminator) return;
+
+    const points = computeTerminatorPoints();
+    if (points.length > 0) {
+      // Draw terminator line
+      L.polyline(points, {
+        color: 'rgba(255, 200, 50, 0.5)',
+        weight: 2,
+        dashArray: '8, 6',
+        interactive: false,
+      }).addTo(terminatorLayerRef.current);
+    }
+  }, [showTerminator, ovationGrid]); // re-render with data updates
 
   // User marker
   useEffect(() => {
